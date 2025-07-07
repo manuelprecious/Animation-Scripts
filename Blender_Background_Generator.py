@@ -8,20 +8,20 @@ import time
 MODEL_PATH = r"G:\Models\asian_themed_low_poly_night_city_buildings\scene.gltf"
 MODEL_TYPE = "GLTF"
 
-DUPLICATION_GRID_X = 5
+DUPLICATION_GRID_X = 15
 DUPLICATION_GRID_Y = 3
 
-SPACING_X = 30.0
-SPACING_Y = 40.0
+SPACING_X = 300.0
+SPACING_Y = 400.0
 
 BACKGROUND_GLOBAL_LOCATION = (
     0,
     -50,
     0,
 )  # World location for the entire background grid if created new
-BACKGROUND_GLOBAL_SCALE = 1.0
-
-# Removed all animation settings
+BACKGROUND_GLOBAL_SCALE_X = 0.002
+BACKGROUND_GLOBAL_SCALE_Y = 0.002
+BACKGROUND_GLOBAL_SCALE_Z = 0.010
 
 # Control whether to rebuild the grid if it already exists
 REBUILD_BACKGROUND_GRID_ON_RUN = False
@@ -400,9 +400,9 @@ class BackgroundGridGeneratorOperator(bpy.types.Operator):
             self._grid_parent = bpy.context.active_object
             self._grid_parent.name = "Background_Grid_Master"
             self._grid_parent.scale = (
-                BACKGROUND_GLOBAL_SCALE,
-                BACKGROUND_GLOBAL_SCALE,
-                BACKGROUND_GLOBAL_SCALE,
+                BACKGROUND_GLOBAL_SCALE_X,
+                BACKGROUND_GLOBAL_SCALE_Y,
+                BACKGROUND_GLOBAL_SCALE_Z,
             )
 
             # Move grid parent to grid collection (ensure it's only in this one or scene)

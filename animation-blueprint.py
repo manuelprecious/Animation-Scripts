@@ -23,13 +23,13 @@ CURRENCY_SYMBOL = "$"
 
 # Animation Settings
 ANIM_START_FRAME = 2
-ANIM_LENGTH_DATA = 200 # Adjusted: Made twice as slow (100 * 2 = 200)
-GRAPH_START_POSITION = 1
-X_AXIS_SPREAD = 5 # Increased distance between points for wider bases
+ANIM_LENGTH_DATA = 100 # Adjusted: Made twice as slow (100 * 2 = 200)
+GRAPH_START_POSITION = 0
+X_AXIS_SPREAD = 10 # Increased distance between points for wider bases
 
 # Custom Animated Object Settings
 # Choose 'CUBE', 'CONE', or 'CYLINDER' for the default placeholder object
-ANIMATED_OBJECT_TYPE = 'CUBE' 
+ANIMATED_OBJECT_TYPE = 'CYLINDER' 
 ANIMATED_OBJECT_NAME = "Animated_Graph_Object"
 ANIMATED_OBJECT_SCALE = 0.5 # Initial scale for the custom object
 

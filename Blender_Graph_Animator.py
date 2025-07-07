@@ -4,50 +4,44 @@ import csv
 import os
 import traceback
 
-context = bpy.context
-scene = bpy.context.scene # Use bpy.context.scene for consistency
-
 # Global Blender version for compatibility checks
 MAJOR_VERSION, MINOR_VERSION, SUB_VERSION = bpy.app.version
 
 ###########################################################################
 ###########################################################################
 #
-# CHANGE THE FOLLOWING INPUT AS PER YOUR CSV FILE AND PREFERENCES
-# BE CAREFUL - ANY WRONG INPUT WILL RAISE AN ERROR.
+# --- USER CONFIGURATION: Graph Animation Settings ---
 
 CSV_FILE_PATH = r"C:\Data\Database.csv" # <--- VERIFY THIS PATH CAREFULLY
 DATA_COLUMN = 3 # 1-indexed column number for numerical data
 MONTH_COLUMN = 2 # 1-indexed column number for category/month labels
 CURRENCY_SYMBOL = "$"
 
-# Animation Settings
-ANIM_START_FRAME = 2
-ANIM_LENGTH_DATA = 100 # Adjusted: Made twice as slow (100 * 2 = 200)
+GRAPH_ANIM_START_FRAME = 2
+GRAPH_ANIM_LENGTH_DATA = 100 # Adjusted: Made twice as slow (100 * 2 = 200)
 GRAPH_START_POSITION = 0
-X_AXIS_SPREAD = 10 # Increased distance between points for wider bases
+GRAPH_X_AXIS_SPREAD = 10 # Increased distance between points for wider bases
 
-# Custom Animated Object Settings
-# Choose 'CUBE', 'CONE', or 'CYLINDER' for the default placeholder object
-ANIMATED_OBJECT_TYPE = 'CYLINDER' 
+# Custom Animated Object Settings for Graph
+ANIMATED_OBJECT_TYPE = 'CYLINDER' # Choose 'CUBE', 'CONE', or 'CYLINDER'
 ANIMATED_OBJECT_NAME = "Animated_Graph_Object"
 ANIMATED_OBJECT_SCALE = 0.5 # Initial scale for the custom object
 
-###########################################################################
-###########################################################################
+# General Script Settings (for this script only)
+SAVE_TEMPLATE_BLEND = False
+TEMPLATE_SAVE_PATH = r"C:\BlenderTemplates\MyGraphTemplate.blend"
+
+# --- END USER CONFIGURATION ---
+
+
+def print_debug_info(message):
+    """Helper function to print debug information."""
+    print(f"[DEBUG] {message}")
+
 
 def read_csv_data(csv_file_path, data_column, month_column):
     """
     Reads numerical data and month labels from a specified CSV file.
-
-    Args:
-        csv_file_path (str): The full path to the CSV file.
-        data_column (int): 1-indexed column number for numerical data.
-        month_column (int): 1-indexed column number for month/category labels.
-
-    Returns:
-        tuple: A tuple containing (data_list, month_list, number_of_data).
-               Returns empty lists and 0 if an error occurs or no valid data.
     """
     data_list = []
     month_list = []
@@ -102,12 +96,6 @@ def read_csv_data(csv_file_path, data_column, month_column):
 def normalize_and_display_data(data_list):
     """
     Normalizes the input data list for display purposes in Blender.
-
-    Args:
-        data_list (list): A list of numerical data points.
-
-    Returns:
-        list: A list of normalized data points ready for display.
     """
     if not data_list:
         return []
@@ -136,14 +124,11 @@ def normalize_and_display_data(data_list):
 def setup_materials():
     """
     Creates and configures all necessary materials for the graph.
-
-    Returns:
-        tuple: A tuple containing (material_1, material_2, material_3, material_4).
     """
     materials = {}
 
     # Material 1 (Curve and Sphere/Animated Object)
-    material_1 = bpy.data.materials.new(name = "anim_material_1")
+    material_1 = bpy.data.materials.new(name = "graph_material_1")
     material_1.use_nodes = True
     nodes = material_1.node_tree.nodes
     links = material_1.node_tree.links
@@ -156,7 +141,7 @@ def setup_materials():
     materials['material_1'] = material_1
 
     # Material 2 (Text)
-    material_2 = bpy.data.materials.new(name = "anim_material_2")
+    material_2 = bpy.data.materials.new(name = "graph_material_2")
     material_2.use_nodes = True
     nodes = material_2.node_tree.nodes
     links = material_2.node_tree.links
@@ -167,8 +152,8 @@ def setup_materials():
     links.new(shader.outputs[0], output.inputs[0])
     materials['material_2'] = material_2
 
-    # Material 3 (X-axis) - No longer directly used for axis, but kept in tuple for consistency
-    material_3 = bpy.data.materials.new(name = "anim_material_3")
+    # Material 3 (X-axis)
+    material_3 = bpy.data.materials.new(name = "graph_material_3")
     material_3.use_nodes = True
     nodes = material_3.node_tree.nodes
     links = material_3.node_tree.links
@@ -179,8 +164,8 @@ def setup_materials():
     links.new(shader.outputs[0], output.inputs[0])
     materials['material_3'] = material_3
 
-    # Material 4 (Z-axis) - No longer directly used for axis, but kept in tuple for consistency
-    material_4 = bpy.data.materials.new(name = "anim_material_4")
+    # Material 4 (Z-axis)
+    material_4 = bpy.data.materials.new(name = "graph_material_4")
     material_4.use_nodes = True
     nodes = material_4.node_tree.nodes
     links = material_4.node_tree.links
@@ -194,24 +179,10 @@ def setup_materials():
     return (materials['material_1'], materials['material_2'], 
             materials['material_3'], materials['material_4'])
 
-def create_curve_and_animated_object(display_data, graph_start_position, x_axis_spread, anim_start_frame, anim_end_frame, material_1, object_type, object_name, object_scale):
+def create_curve_and_animated_object(display_data, graph_start_position, x_axis_spread, anim_start_frame, anim_end_frame, material_1, object_type, object_name, object_scale, parent_empty, target_collection):
     """
     Creates the 3D curve based on data and a custom object that follows it.
     The curve's animation (trimming) is handled by Geometry Nodes.
-
-    Args:
-        display_data (list): Normalized data points for curve height.
-        graph_start_position (float): Starting X-coordinate for the graph.
-        x_axis_spread (float): Distance between data points on the X-axis.
-        anim_start_frame (int): The frame at which the animation starts.
-        anim_end_frame (int): The frame at which the animation ends.
-        material_1 (bpy.types.Material): Material for the curve and animated object.
-        object_type (str): Type of primitive object to create ('CUBE', 'CONE', 'CYLINDER').
-        object_name (str): Name for the animated object.
-        object_scale (float): Initial scale for the custom object.
-
-    Returns:
-        tuple: A tuple containing (curve_path_obj, animated_obj).
     """
     curve_path_obj = None
     animated_obj = None
@@ -234,9 +205,17 @@ def create_curve_and_animated_object(display_data, graph_start_position, x_axis_
                 bezier.co = (current_position_x, 0, data) # Initial position on Y=0
                 current_position_x += x_axis_spread # Use x_axis_spread here
 
-        context.scene.collection.objects.link(curve_path_obj)
-        curve_path_obj.select_set(True)
-        context.view_layer.objects.active = curve_path_obj
+        # Link to target collection and parent
+        # First, unlink from any default collections it might have been linked to
+        for coll in list(curve_path_obj.users_collection):
+            coll.objects.unlink(curve_path_obj)
+        target_collection.objects.link(curve_path_obj)
+        
+        curve_path_obj.parent = parent_empty
+        curve_path_obj.matrix_parent_inverse = parent_empty.matrix_world.inverted()
+
+        # Set active object for edit mode (temporarily)
+        bpy.context.view_layer.objects.active = curve_path_obj
         bpy.ops.object.editmode_toggle()
         bpy.ops.curve.select_all(action='SELECT')
         bpy.ops.curve.handle_type_set(type='AUTOMATIC')
@@ -263,7 +242,7 @@ def create_curve_and_animated_object(display_data, graph_start_position, x_axis_
         trim_curve.mode = 'FACTOR'
         trim_curve.inputs[1].default_value = True # Start factor is 0
         
-        # Keyframes for curve animation (simplified to match reference)
+        # Keyframes for curve animation
         trim_curve.inputs[3].default_value = 0.0 # End factor starts at 0
         trim_curve.inputs[3].keyframe_insert('default_value', frame=anim_start_frame)
         trim_curve.inputs[3].default_value = 1.0 # End factor ends at 1
@@ -317,11 +296,20 @@ def create_curve_and_animated_object(display_data, graph_start_position, x_axis_
             bpy.ops.mesh.primitive_cube_add(size=1)
             print(f"Warning: Unknown object type '{object_type}'. Defaulting to CUBE.")
 
-        animated_obj = context.active_object
+        animated_obj = bpy.context.active_object
         animated_obj.name = object_name
         animated_obj.location = [0,0,0] # Initial location, will be overridden by constraint
-        animated_obj.scale = [object_scale, object_scale, object_scale] # Apply initial scale
+        animated_obj.scale = [object_scale,object_scale,object_scale] # Apply initial scale
         animated_obj.data.materials.append(material_1)
+
+        # Link to target collection and parent
+        # First, unlink from any default collections it might have been linked to
+        for coll in list(animated_obj.users_collection):
+            coll.objects.unlink(animated_obj)
+        target_collection.objects.link(animated_obj)
+
+        animated_obj.parent = parent_empty
+        animated_obj.matrix_parent_inverse = parent_empty.matrix_world.inverted()
 
         # Add Follow Path constraint to the animated object
         follow_path = animated_obj.constraints.new(type='FOLLOW_PATH')
@@ -351,20 +339,9 @@ def create_curve_and_animated_object(display_data, graph_start_position, x_axis_
     
     return curve_path_obj, animated_obj
 
-def create_data_points_and_text(data_list, month_list, display_data, graph_start_position, x_axis_spread, anim_start_frame, anim_length_data, currency_symbol, material_2):
+def create_data_points_and_text(data_list, month_list, display_data, graph_start_position, x_axis_spread, anim_start_frame, anim_length_data, currency_symbol, material_2, parent_empty, target_collection):
     """
     Creates animated text labels for each data point.
-
-    Args:
-        data_list (list): Original numerical data.
-        month_list (list): Month/category labels.
-        display_data (list): Normalized data for display heights.
-        graph_start_position (float): Starting X-coordinate.
-        x_axis_spread (float): Distance between points.
-        anim_start_frame (int): Start frame for animations.
-        anim_length_data (int): Length of animation for each data point.
-        currency_symbol (str): Symbol to prepend to data values.
-        material_2 (bpy.types.Material): Material for text labels.
     """
     anim_length_text = anim_length_data / 2
     anim_curr_frame = anim_start_frame
@@ -382,37 +359,55 @@ def create_data_points_and_text(data_list, month_list, display_data, graph_start
             ob_month.data.align_y = "CENTER"
             ob_month.data.extrude = 0.01
 
-            ob_month.location = [graph_start_position + x_axis_spread * data_counter, 0, display_data[data_counter] + 1.5] # Use x_axis_spread here
+            ob_month.location = [graph_start_position + x_axis_spread * data_counter, 0, display_data[data_counter] + 1.5]
             ob_month.rotation_euler = [math.radians(90),0,0]
             
             # Animate the caption scale to appear immediately
             ob_month.scale = [0,0,0]
-            ob_month.keyframe_insert(data_path="scale", frame = anim_curr_frame - 1) # Invisible just before
+            ob_month.keyframe_insert(data_path="scale", frame = anim_curr_frame - 1)
             ob_month.scale = [0.5,0.5,0.5]
-            ob_month.keyframe_insert(data_path="scale", frame = anim_curr_frame) # Visible immediately
+            ob_month.keyframe_insert(data_path="scale", frame = anim_curr_frame)
             
             # Assign the material
             ob_month.data.materials.append(material_2)
+
+            # Link to target collection and parent
+            # First, unlink from any default collections it might have been linked to
+            for coll in list(ob_month.users_collection):
+                coll.objects.unlink(ob_month)
+            target_collection.objects.link(ob_month)
+
+            ob_month.parent = parent_empty
+            ob_month.matrix_parent_inverse = parent_empty.matrix_world.inverted()
             
             # Add the 2nd caption (data value)
             bpy.ops.object.text_add()
-            ob_data = context.active_object
+            ob_data = bpy.context.object
             ob_data.data.body = text_data
             ob_data.data.align_x = "CENTER"
             ob_data.data.align_y = "CENTER"
             ob_data.data.extrude = 0.01
 
-            ob_data.location = [graph_start_position + x_axis_spread * data_counter, 0, display_data[data_counter] + 1] # Use x_axis_spread here
+            ob_data.location = [graph_start_position + x_axis_spread * data_counter, 0, display_data[data_counter] + 1]
             ob_data.rotation_euler = [math.radians(90),0,0]
 
             # Animate the caption scale to appear immediately
             ob_data.scale = [0,0,0]
-            ob_data.keyframe_insert(data_path="scale", frame = anim_curr_frame - 1) # Invisible just before
+            ob_data.keyframe_insert(data_path="scale", frame = anim_curr_frame - 1)
             ob_data.scale = [0.5,0.5,0.5]
-            ob_data.keyframe_insert(data_path="scale", frame = anim_curr_frame) # Visible immediately
+            ob_data.keyframe_insert(data_path="scale", frame = anim_curr_frame)
             
             # Assign the material
             ob_data.data.materials.append(material_2)
+
+            # Link to target collection and parent
+            # First, unlink from any default collections it might have been linked to
+            for coll in list(ob_data.users_collection):
+                coll.objects.unlink(ob_data)
+            target_collection.objects.link(ob_data)
+
+            ob_data.parent = parent_empty
+            ob_data.matrix_parent_inverse = parent_empty.matrix_world.inverted()
             
             anim_curr_frame += anim_length_data # Advance frame for next data point
         except Exception as e:
@@ -420,48 +415,72 @@ def create_data_points_and_text(data_list, month_list, display_data, graph_start
             traceback.print_exc()
             print("Skipping this data point and continuing.")
 
-def create_axes(display_data, graph_start_position, x_axis_spread, number_of_data, material_3, material_4): # x_axis_spread parameter added
+def create_axes(display_data, graph_start_position, x_axis_spread, number_of_data, material_3, material_4, parent_empty, target_collection):
     """
     Creates the X and Z axes for the graph.
-
-    Args:
-        display_data (list): Normalized data points to determine Z-axis height.
-        graph_start_position (float): Starting X-coordinate.
-        x_axis_spread (float): Distance between points.
-        number_of_data (int): Total number of data points.
-        material_3 (bpy.types.Material): Material for the X-axis.
-        material_4 (bpy.types.Material): Material for the Z-axis.
     """
     try:
         # X-axis
         bpy.ops.mesh.primitive_cube_add()
-        ob_x_axis = context.active_object
-        axis_length = graph_start_position + x_axis_spread * (number_of_data - 1) + 2 if number_of_data > 0 else 2 # Use x_axis_spread here
+        ob_x_axis = bpy.context.active_object
+        axis_length = graph_start_position + x_axis_spread * (number_of_data - 1) + 2 if number_of_data > 0 else 2
         ob_x_axis.dimensions = [axis_length,0.05,0.05]
         ob_x_axis.location = [axis_length/2,0,0]
         ob_x_axis.data.materials.append(material_3)
 
+        # First, unlink from any default collections it might have been linked to
+        for coll in list(ob_x_axis.users_collection):
+            coll.objects.unlink(ob_x_axis)
+        target_collection.objects.link(ob_x_axis)
+        
+        ob_x_axis.parent = parent_empty
+        ob_x_axis.matrix_parent_inverse = parent_empty.matrix_world.inverted()
+
         bpy.ops.mesh.primitive_cylinder_add(vertices = 3, radius = 0.3, depth = 0.1)
-        cyl1 = context.active_object
+        cyl1 = bpy.context.active_object
         cyl1.location = [axis_length, 0, 0]
         cyl1.scale = [1,1.7,1]
         cyl1.rotation_euler = [0,math.radians(90),-math.radians(90)]
         cyl1.data.materials.append(material_3)
 
+        # First, unlink from any default collections it might have been linked to
+        for coll in list(cyl1.users_collection):
+            coll.objects.unlink(cyl1)
+        target_collection.objects.link(cyl1)
+
+        cyl1.parent = parent_empty
+        cyl1.matrix_parent_inverse = parent_empty.matrix_world.inverted()
+
         # Z-axis
         bpy.ops.mesh.primitive_cube_add()
-        ob_z_axis = context.active_object
+        ob_z_axis = bpy.context.active_object
         axis_height = max(display_data) + 3 if display_data else 3
         ob_z_axis.dimensions = [0.05,0.05,axis_height]
         ob_z_axis.location = [0,0,axis_height/2]
         ob_z_axis.data.materials.append(material_4)
 
+        # First, unlink from any default collections it might have been linked to
+        for coll in list(ob_z_axis.users_collection):
+            coll.objects.unlink(ob_z_axis)
+        target_collection.objects.link(ob_z_axis)
+
+        ob_z_axis.parent = parent_empty
+        ob_z_axis.matrix_parent_inverse = parent_empty.matrix_world.inverted()
+
         bpy.ops.mesh.primitive_cylinder_add(vertices = 3, radius = 0.3, depth = 0.1)
-        cyl2 = context.active_object
+        cyl2 = bpy.context.active_object
         cyl2.location = [0, 0, axis_height]
         cyl2.scale = [1,1.7,1]
         cyl2.rotation_euler = [math.radians(90),0,0]
         cyl2.data.materials.append(material_4)
+
+        # First, unlink from any default collections it might have been linked to
+        for coll in list(cyl2.users_collection):
+            coll.objects.unlink(cyl2)
+        target_collection.objects.link(cyl2)
+
+        cyl2.parent = parent_empty
+        cyl2.matrix_parent_inverse = parent_empty.matrix_world.inverted()
         print("Axes created successfully.")
     except Exception as e:
         print(f"Error creating axes: {e}")
@@ -469,17 +488,9 @@ def create_axes(display_data, graph_start_position, x_axis_spread, number_of_dat
         print("Axes might not be generated correctly.")
 
 
-def setup_camera_animation(curve_path_obj, animated_obj, anim_start_frame, anim_end_frame, number_of_data, x_axis_spread):
+def setup_camera_animation(curve_path_obj, animated_obj, anim_start_frame, anim_end_frame, number_of_data, x_axis_spread, target_collection):
     """
     Sets up the camera to follow the generated curve with dynamic angles and focus on the animated object.
-
-    Args:
-        curve_path_obj (bpy.types.Object): The curve object the camera will follow.
-        animated_obj (bpy.types.Object): The animated object (ball) that the camera will focus on.
-        anim_start_frame (int): The frame at which the camera animation starts.
-        anim_end_frame (int): The frame at which the camera animation ends.
-        number_of_data (int): Total number of data points (to determine path length).
-        x_axis_spread (float): Distance between data points on the X-axis.
     """
     # Get the active camera, or create one if none exists
     camera_obj = bpy.context.scene.camera
@@ -492,6 +503,12 @@ def setup_camera_animation(curve_path_obj, animated_obj, anim_start_frame, anim_
     else:
         print("Using existing active camera for animation.")
 
+    # Link camera to the graph collection for better organization
+    # First, unlink from any default collections it might have been linked to
+    for coll in list(camera_obj.users_collection):
+        coll.objects.unlink(camera_obj)
+    target_collection.objects.link(camera_obj)
+
     # Clear existing animation data on the camera to avoid conflicts
     if camera_obj.animation_data:
         camera_obj.animation_data_clear()
@@ -503,7 +520,6 @@ def setup_camera_animation(curve_path_obj, animated_obj, anim_start_frame, anim_
     # --- Add Follow Path constraint to the Camera ---
     follow_path_constraint = camera_obj.constraints.new(type='FOLLOW_PATH')
     follow_path_constraint.target = curve_path_obj
-    # Camera's local -Y axis points along the path, Z is up. This is the "forward" direction.
     follow_path_constraint.forward_axis = 'TRACK_NEGATIVE_Y' 
     follow_path_constraint.up_axis = 'UP_Z' 
     follow_path_constraint.use_fixed_location = True # Ensures it stays on the path
@@ -530,43 +546,23 @@ def setup_camera_animation(curve_path_obj, animated_obj, anim_start_frame, anim_
     print("Camera 'Track To' constraint added, targeting the animated object.")
 
     # --- Define a set of dynamic camera poses (relative to the path) ---
-    # Each pose is (local_offset_x, local_offset_y, local_offset_z)
-    # local_offset_y: Negative values are behind the path, positive are in front.
-    # The camera's rotation is now handled by the Track To constraint.
     dynamic_poses = [
-        # Pose 1: Wide shot, slightly closer behind and above
-        (0, -20, 5), # Was -25, 6
-
-        # Pose 2: Closer, slightly to the right
-        (5, -15, 3.5), # Was -18, 4
-
-        # Pose 3: Slightly closer back, higher (overview)
-        (0, -30, 7), # Was -35, 8
-
-        # Pose 4: Closer, slightly to the left
-        (-5, -15, 3.5), # Was -18, 4
-
-        # Pose 5: Medium distance, directly behind, slightly closer
-        (0, -17, 4.5), # Was -20, 5
-
-        # Pose 6: Slightly in front, looking back (camera moves ahead, but looks back at the object)
-        (0, 7, 2.5), # Was 8, 3
-
-        # Pose 7: Side view (right), slightly closer distance
-        (7, -12, 3), # Was 8, -15, 3.5
-
-        # Pose 8: Side view (left), slightly closer distance
-        (-7, -12, 3), # Was -8, -15, 3.5
-        
-        # Added more subtle variations for smoother transitions, adjusted for closer distance
-        (0, -18, 5), # Was -22, 5.5
-        (2.5, -16, 3.8), # Was 3, -19, 4.2
-        (-2.5, -16, 3.8), # Was -3, -19, 4.2
-        (0, -8, 2.5), # Was -10, 3 (Even closer view)
-        (0, -24, 6.5), # Was -28, 7 (Slightly further back, but still closer than original)
+        (0, -20, 5), 
+        (5, -15, 3.5), 
+        (0, -30, 7), 
+        (-5, -15, 3.5), 
+        (0, -17, 4.5), 
+        (0, 7, 2.5), 
+        (7, -12, 3), 
+        (-7, -12, 3), 
+        (0, -18, 5), 
+        (2.5, -16, 3.8), 
+        (-2.5, -16, 3.8), 
+        (0, -8, 2.5), 
+        (0, -24, 6.5), 
     ]
     
-    segment_length = ANIM_LENGTH_DATA # Frames per data point
+    segment_length = GRAPH_ANIM_LENGTH_DATA # Frames per data point
 
     # Initial pose at anim_start_frame
     initial_loc = dynamic_poses[0]
@@ -599,19 +595,16 @@ def setup_camera_animation(curve_path_obj, animated_obj, anim_start_frame, anim_
 def setup_scene_settings(anim_end_frame):
     """
     Configures global Blender scene settings.
-
-    Args:
-        anim_end_frame (int): The calculated end frame for the animation.
     """
-    scene.frame_set(1)
-    scene.frame_start = 1
-    scene.frame_end = anim_end_frame + 50 # Add some buffer frames
+    bpy.context.scene.frame_set(1)
+    bpy.context.scene.frame_start = 1
+    bpy.context.scene.frame_end = anim_end_frame + 50 # Add some buffer frames
 
     if MAJOR_VERSION >= 4 and MINOR_VERSION >= 1:
-        scene.render.engine = 'BLENDER_EEVEE_NEXT'
+        bpy.context.scene.render.engine = 'BLENDER_EEVEE_NEXT'
         print("Set render engine to BLENDER_EEVEE_NEXT.")
     else:
-        scene.render.engine = 'BLENDER_EEVEE'
+        bpy.context.scene.render.engine = 'BLENDER_EEVEE'
         print("Set render engine to BLENDER_EEVEE.")
 
     print("Note: Automatic Bloom enabling via script has been disabled for compatibility.")
@@ -619,68 +612,155 @@ def setup_scene_settings(anim_end_frame):
 
     print("Scene settings configured.")
 
+
+class GraphAnimatorOperator(bpy.types.Operator):
+    """Blender Operator to generate and animate a 3D graph."""
+    bl_idname = "object.graph_animator"
+    bl_label = "Generate Graph Animation"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    # Operator properties to store state (if needed for modal, but this script is not modal)
+    _saved_cursor_loc = None
+
+    def execute(self, context):
+        print("="*50)
+        print("STARTING BLENDER GRAPH ANIMATOR SCRIPT")
+        print("="*50)
+        
+        # Save the current location of the 3D cursor
+        self._saved_cursor_loc = bpy.context.scene.cursor.location.xyz
+
+        # Clear selection at the start to avoid unintended operations on existing objects
+        bpy.ops.object.select_all(action='DESELECT')
+
+        # Create master empty for graph
+        graph_master_empty = bpy.data.objects.get("Graph_Master")
+        if graph_master_empty:
+            print_debug_info("Existing 'Graph_Master' empty found. Clearing its children and re-using.")
+            # Clear children
+            for child in list(graph_master_empty.children):
+                if child.name != "Graph_Camera": # Don't delete the camera if it's a child of master
+                    bpy.data.objects.remove(child, do_unlink=True)
+            # Reset its location, rotation, scale to defaults
+            graph_master_empty.location = (0,0,0) 
+            graph_master_empty.rotation_euler = (0,0,0)
+            graph_master_empty.scale = (1,1,1)
+        else:
+            bpy.ops.object.empty_add(type='PLAIN_AXES', location=(0,0,0))
+            graph_master_empty = bpy.context.active_object
+            graph_master_empty.name = "Graph_Master"
+        
+        # Create collection for graph elements
+        graph_collection = bpy.data.collections.get("Graph_Elements")
+        if graph_collection:
+            print_debug_info("Existing 'Graph_Elements' collection found. Clearing its contents.")
+            # Unlink objects from this collection
+            for obj in list(graph_collection.objects):
+                if obj.name != "Graph_Master" and obj.name != "Graph_Camera": # Don't unlink master or camera
+                    graph_collection.objects.unlink(obj)
+                    # If object has no other users, delete it
+                    if not obj.users_collection:
+                        bpy.data.objects.remove(obj, do_unlink=True)
+        else:
+            graph_collection = bpy.data.collections.new("Graph_Elements")
+            bpy.context.scene.collection.children.link(graph_collection)
+        
+        # Link graph master empty to its collection (ensure it's only in this one)
+        for coll in list(graph_master_empty.users_collection):
+            if coll != graph_collection:
+                coll.objects.unlink(graph_master_empty)
+        if graph_master_empty.name not in graph_collection.objects:
+            graph_collection.objects.link(graph_master_empty)
+
+
+        # 1. Read Data
+        data_list, month_list, number_of_data = read_csv_data(CSV_FILE_PATH, DATA_COLUMN, MONTH_COLUMN)
+
+        if number_of_data == 0:
+            print("No valid data found in the CSV file. Exiting script gracefully.")
+            self.report({'WARNING'}, "No valid data found in CSV. Graph not generated.")
+            return {'CANCELLED'}
+
+        # 2. Normalize Data
+        display_data = normalize_and_display_data(data_list)
+
+        # Calculate animation end frame based on data length
+        if number_of_data > 1:
+            anim_end_frame = GRAPH_ANIM_START_FRAME + GRAPH_ANIM_LENGTH_DATA * (number_of_data - 1)
+        else:
+            anim_end_frame = GRAPH_ANIM_START_FRAME + GRAPH_ANIM_LENGTH_DATA
+
+        # 3. Setup Materials
+        material_1, material_2, material_3, material_4 = setup_materials()
+
+        # 4. Create Curve and Animated Object
+        curve_path_obj, animated_obj = create_curve_and_animated_object(
+            display_data, GRAPH_START_POSITION, GRAPH_X_AXIS_SPREAD,
+            GRAPH_ANIM_START_FRAME, anim_end_frame, material_1,
+            ANIMATED_OBJECT_TYPE, ANIMATED_OBJECT_NAME, ANIMATED_OBJECT_SCALE,
+            graph_master_empty, graph_collection # Pass parent and collection
+        )
+
+        # 5. Create Data Points and Text
+        create_data_points_and_text(data_list, month_list, display_data, 
+                                    GRAPH_START_POSITION, GRAPH_X_AXIS_SPREAD, GRAPH_ANIM_START_FRAME, 
+                                    GRAPH_ANIM_LENGTH_DATA, CURRENCY_SYMBOL, material_2,
+                                    graph_master_empty, graph_collection) # Pass parent and collection
+
+        # 6. Create Axes (uncomment if needed)
+        # create_axes(display_data, GRAPH_START_POSITION, GRAPH_X_AXIS_SPREAD, 
+        #             number_of_data, material_3, material_4,
+        #             graph_master_empty, graph_collection) # Pass parent and collection
+
+        # 7. Setup Camera Animation
+        if curve_path_obj and animated_obj: 
+            setup_camera_animation(curve_path_obj, animated_obj, 
+                                   GRAPH_ANIM_START_FRAME, anim_end_frame, 
+                                   number_of_data, GRAPH_X_AXIS_SPREAD,
+                                   graph_collection) # Pass graph collection for camera
+        else:
+            print("Skipping camera animation: Curve object or animated object not found for graph.")
+
+        # 8. Setup Scene Settings (This script manages global scene frames and render engine)
+        setup_scene_settings(anim_end_frame)
+
+        # Clean-up work
+        bpy.context.scene.cursor.location.xyz = self._saved_cursor_loc # Restore 3D cursor
+        bpy.ops.object.select_all(action='DESELECT') # Deselect all objects at the end
+
+        print("\n3D Graph Animation generation complete. Check console for any errors.")
+        print(f"Animation runs from frame {bpy.context.scene.frame_start} to {bpy.context.scene.frame_end}.")
+        print("Please check the 'Graph_Elements' collection in your Blender Outliner.")
+
+        return {'FINISHED'}
+
+
+def register():
+    bpy.utils.register_class(GraphAnimatorOperator)
+
+def unregister():
+    bpy.utils.unregister_class(GraphAnimatorOperator)
+
 def main():
     """
-    Main function to orchestrate the 3D graph generation and animation.
+    Main function to orchestrate the graph generation.
+    Registers and runs the operator.
     """
-    # Save the current location of the 3D cursor
-    saved_cursor_loc = scene.cursor.location.xyz
-
-    # 1. Read Data
-    data_list, month_list, number_of_data = read_csv_data(CSV_FILE_PATH, DATA_COLUMN, MONTH_COLUMN)
-
-    if number_of_data == 0:
-        print("No valid data found in the CSV file. Exiting script gracefully.")
-        return
-
-    # 2. Normalize Data
-    display_data = normalize_and_display_data(data_list)
-
-    # Calculate animation end frame based on data length
-    if number_of_data > 1:
-        anim_end_frame = ANIM_START_FRAME + ANIM_LENGTH_DATA * (number_of_data - 1)
-    else:
-        anim_end_frame = ANIM_START_FRAME + ANIM_LENGTH_DATA
-
-    # 3. Setup Materials
-    material_1, material_2, material_3, material_4 = setup_materials()
-
-    # 4. Create Curve and Animated Object
-    # The animated object now replaces the sphere and the road mesh visually.
-    curve_path_obj, animated_obj = create_curve_and_animated_object(
-        display_data, GRAPH_START_POSITION, X_AXIS_SPREAD, # Use X_AXIS_SPREAD here
-        ANIM_START_FRAME, anim_end_frame, material_1,
-        ANIMATED_OBJECT_TYPE, ANIMATED_OBJECT_NAME, ANIMATED_OBJECT_SCALE
-    )
-
-    # 5. Create Data Points and Text
-    create_data_points_and_text(data_list, month_list, display_data, GRAPH_START_POSITION, X_AXIS_SPREAD, ANIM_START_FRAME, ANIM_LENGTH_DATA, CURRENCY_SYMBOL, material_2) # Use X_AXIS_SPREAD here
-
-    # 6. Create Axes - COMMENTED OUT TO REMOVE AXES
-    # create_axes(display_data, GRAPH_START_POSITION, X_AXIS_SPREAD, number_of_data, material_3, material_4) # x_axis_spread parameter added
+    print("="*50)
+    print("STARTING BLENDER GRAPH ANIMATOR SCRIPT")
+    print("="*50)
     
-    # Removed: 7. Create Ground Plane
-    # create_ground_plane((material_1, material_2, material_3, material_4)) # Pass materials tuple
+    # Ensure the operator is registered before calling it
+    try:
+        bpy.utils.register_class(GraphAnimatorOperator)
+    except ValueError:
+        # Already registered, unregister and re-register to ensure latest version
+        bpy.utils.unregister_class(GraphAnimatorOperator)
+        bpy.utils.register_class(GraphAnimatorOperator)
 
-    # 7. Setup Camera Animation (re-numbered)
-    # Pass animated_obj to the camera setup function
-    if curve_path_obj and animated_obj: 
-        setup_camera_animation(curve_path_obj, animated_obj, ANIM_START_FRAME, anim_end_frame, number_of_data, X_AXIS_SPREAD)
-    else:
-        print("Skipping camera animation: Curve object or animated object not found.")
-
-    # 8. Setup Scene Settings (re-numbered)
-    setup_scene_settings(anim_end_frame)
-
-    # Clean-up work
-    scene.cursor.location.xyz = saved_cursor_loc
-    # Deselect all objects at the end, if any are active
-    bpy.ops.object.select_all(action='DESELECT')
+    # Call the operator to start the process
+    bpy.ops.object.graph_animator('EXEC_DEFAULT') # Use EXEC_DEFAULT for non-modal
 
 
-    print("\n3D Curved Graph generation attempt complete. Check console for any errors.")
-    print(f"Animation runs from frame {scene.frame_start} to {scene.frame_end}.")
-
-# Run the main function
 if __name__ == "__main__":
     main()

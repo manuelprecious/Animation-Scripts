@@ -24,6 +24,11 @@ BACKGROUND_MOVE_DISTANCE_X = 0.0
 BACKGROUND_MOVE_DISTANCE_Y = 50.0 # Example: moves 50 units along Y-axis
 BACKGROUND_MOVE_DISTANCE_Z = 0.0
 
+# NEW CONFIGURATION: Control whether to rebuild the grid if it already exists
+# Set to True to force a complete rebuild (clears existing grid objects).
+# Set to False to preserve existing grid objects and their transformations on subsequent runs.
+REBUILD_BACKGROUND_GRID_ON_RUN = False # <--- IMPORTANT CHANGE
+
 # Batch processing settings for UI responsiveness
 BATCH_SIZE = 5 # Number of grid cells to process per UI update cycle. Adjust based on performance.
 
@@ -61,7 +66,7 @@ def link_object_and_hierarchy_to_collection(obj, target_collection):
         for coll in list(node_obj.users_collection):
             if coll != bpy.context.scene.collection and coll != target_collection:
                 coll.objects.unlink(node_obj)
-        
+            
         # Link to the target collection if not already there
         if node_obj.name not in target_collection.objects: 
             target_collection.objects.link(node_obj)
@@ -124,7 +129,7 @@ def import_and_prepare_model(filepath, file_type):
         if not source_collection:
             source_collection = bpy.data.collections.new(BACKGROUND_SOURCE_COLLECTION_NAME)
             bpy.context.scene.collection.children.link(source_collection)
-        
+            
         # Move all newly imported objects to the script's source collection
         for obj in newly_imported_objects:
             # Unlink from all current collections, including the temporary import one
@@ -149,10 +154,10 @@ def import_and_prepare_model(filepath, file_type):
         bpy.ops.object.select_all(action='DESELECT')
         for obj in newly_imported_objects:
             obj.select_set(True)
-        
+            
         if newly_imported_objects:
             bpy.context.view_layer.objects.active = newly_imported_objects[0]
-        
+            
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         bpy.ops.object.select_all(action='DESELECT')
         print_debug_info("Transformations applied to imported model.")
@@ -200,7 +205,7 @@ def duplicate_object_with_hierarchy(obj, new_name_prefix):
         if obj_node.data:
             new_obj.data = obj_node.data.copy()
             new_obj.data.name = f"{current_name_prefix}_{obj_node.data.name}"
-        
+            
         # Clear animation data from the duplicate to avoid unintended animations
         new_obj.animation_data_clear()
 
@@ -306,43 +311,61 @@ class BackgroundGridGeneratorOperator(bpy.types.Operator):
             print_debug_info("Using existing source objects from dedicated source collection.")
             self._top_level_model_roots = [obj for obj in self._source_collection.objects if obj.parent is None]
             if not self._top_level_model_roots:
-                 self.report({'ERROR'}, "No top-level objects found in the source collection. Cannot create grid.")
-                 return {'CANCELLED'}
+                self.report({'ERROR'}, "No top-level objects found in the source collection. Cannot create grid.")
+                return {'CANCELLED'}
 
         # Check for existing background elements to avoid re-creating master empty
         existing_grid_parent = bpy.data.objects.get("Background_Grid_Master")
         existing_grid_collection = bpy.data.collections.get("Background_Grid")
 
-        if existing_grid_parent and existing_grid_collection: # Check only for existence, not content, to preserve position
-            print_debug_info("Existing 'Background_Grid_Master' and 'Background_Grid' collection found. Re-using and clearing contents.")
-            self._grid_parent = existing_grid_parent
-            self._grid_collection = existing_grid_collection
-            
-            # Clear existing objects within the collection to rebuild the grid
-            # Only delete objects that are children of _grid_parent or directly linked to _grid_collection
-            # and not linked to any other collection (except possibly the master scene collection, which is okay)
-            objects_to_delete = []
-            for obj in list(self._grid_collection.objects):
-                if obj == self._grid_parent: # Don't delete the master parent itself
-                    continue
+        # --- MODIFIED LOGIC START ---
+        # Determine if we should rebuild the grid or preserve existing one
+        should_rebuild = REBUILD_BACKGROUND_GRID_ON_RUN
+
+        if existing_grid_parent and existing_grid_collection:
+            # Check if there are actual duplicated models in the grid collection (beyond just the parent empty)
+            # This is a heuristic to determine if the grid has been "built"
+            has_existing_grid_content = any(obj != existing_grid_parent for obj in existing_grid_collection.objects)
+
+            if has_existing_grid_content and not should_rebuild:
+                print_debug_info("Existing 'Background_Grid' found with content. Skipping grid generation to preserve manual changes.")
+                self.report({'INFO'}, "Background grid already exists. Set REBUILD_BACKGROUND_GRID_ON_RUN = True to force rebuild.")
                 
-                # Check if the object is only linked to this grid collection or also to the scene collection (which is fine)
-                is_exclusively_in_grid_collection = True
-                for coll in obj.users_collection:
-                    if coll != self._grid_collection and coll != bpy.context.scene.collection:
-                        is_exclusively_in_grid_collection = False
-                        break
+                # If we're skipping generation, we still need to ensure the parent and collection are set for animation/cleanup
+                self._grid_parent = existing_grid_parent
+                self._grid_collection = existing_grid_collection
                 
-                if is_exclusively_in_grid_collection:
-                    objects_to_delete.append(obj)
-                else:
-                    # If shared with other *non-scene* collections, just unlink it from Background_Grid
-                    self._grid_collection.objects.unlink(obj)
-            
-            for obj_to_delete in objects_to_delete:
-                bpy.data.objects.remove(obj_to_delete, do_unlink=True)
-            
-        else:
+                # We still need to call finish_operation to handle animation and template saving
+                self.finish_operation(context)
+                return {'FINISHED'}
+            else:
+                print_debug_info("Existing 'Background_Grid' found. Clearing contents to rebuild or it's empty.")
+                self._grid_parent = existing_grid_parent
+                self._grid_collection = existing_grid_collection
+                
+                # Clear existing objects within the collection to rebuild the grid
+                objects_to_delete = []
+                for obj in list(self._grid_collection.objects):
+                    if obj == self._grid_parent: # Don't delete the master parent itself
+                        continue
+                    
+                    # Check if the object is only linked to this grid collection or also to the scene collection (which is fine)
+                    is_exclusively_in_grid_collection = True
+                    for coll in obj.users_collection:
+                        if coll != self._grid_collection and coll != bpy.context.scene.collection:
+                            is_exclusively_in_grid_collection = False
+                            break
+                    
+                    if is_exclusively_in_grid_collection:
+                        objects_to_delete.append(obj)
+                    else:
+                        # If shared with other *non-scene* collections, just unlink it from Background_Grid
+                        self._grid_collection.objects.unlink(obj)
+                
+                for obj_to_delete in objects_to_delete:
+                    bpy.data.objects.remove(obj_to_delete, do_unlink=True)
+                
+        else: # No existing grid parent or collection found
             print_debug_info("No existing 'Background_Grid' elements found. Creating new.")
             
             # Create main grid collection for background
@@ -361,7 +384,7 @@ class BackgroundGridGeneratorOperator(bpy.types.Operator):
                     coll.objects.unlink(self._grid_parent)
             if self._grid_parent.name not in self._grid_collection.objects:
                 self._grid_collection.objects.link(self._grid_parent)
-
+        # --- MODIFIED LOGIC END ---
 
         # Calculate grid center offset (always calculate based on current settings)
         self._grid_x = DUPLICATION_GRID_X
@@ -458,7 +481,7 @@ class BackgroundGridGeneratorOperator(bpy.types.Operator):
         if self._timer:
             context.window_manager.event_timer_remove(self._timer)
             self._timer = None
-        
+            
         context.window_manager.progress_end()
 
         # Original imported objects (background model) are now persistent in a hidden collection.

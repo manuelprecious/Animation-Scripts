@@ -8,16 +8,16 @@ import time
 MODEL_PATH = r"G:\Models\asian_themed_low_poly_night_city_buildings\scene.gltf"
 MODEL_TYPE = 'GLTF'
 
-DUPLICATION_GRID_X = 5
+DUPLICATION_GRID_X = 15
 DUPLICATION_GRID_Y = 3
 
-SPACING_X = 30.0
-SPACING_Y = 40.0
+SPACING_X = 300.0
+SPACING_Y = 400.0
 
 BACKGROUND_GLOBAL_LOCATION = (0, -50, 0) # World location for the entire background grid if created new
-BACKGROUND_GLOBAL_SCALE = 1.0
+BACKGROUND_GLOBAL_SCALE = 0.1
 
-ANIMATE_BACKGROUND = True
+ANIMATE_BACKGROUND = False
 BACKGROUND_ANIMATION_START_FRAME = 1
 BACKGROUND_ANIMATION_END_FRAME = 250
 BACKGROUND_MOVE_DISTANCE_X = 0.0
@@ -226,40 +226,37 @@ def duplicate_object_with_hierarchy(obj, new_name_prefix):
 
 def animate_background_grid(parent_empty, start_frame, end_frame, move_x, move_y, move_z):
     """
-    Animates the parent empty to move the entire background grid.
+    Animates the parent empty to move the entire background grid WITHOUT resetting its location.
     """
     if not parent_empty:
         print("Error: Parent empty not provided for background animation.")
         return
 
     print_debug_info(f"Animating background from frame {start_frame} to {end_frame}")
-    
-    # Clear any existing animation data on the parent empty
-    if parent_empty.animation_data:
-        parent_empty.animation_data_clear()
 
-    # Get the initial location of the parent empty
-    initial_loc = parent_empty.location.copy()
+    # Cache current location before inserting keyframes
+    current_loc = parent_empty.location.copy()
 
-    # Set the first keyframe at the initial location
-    parent_empty.location = initial_loc
+    # Keyframe starting location (do NOT modify location, just key what’s there)
     parent_empty.keyframe_insert(data_path="location", frame=start_frame)
 
-    # Calculate the end location by adding the movement distances
-    end_loc = initial_loc + mathutils.Vector((move_x, move_y, move_z))
-    
-    # Set the second keyframe at the calculated end location
-    parent_empty.location = end_loc
+    # Move and keyframe ending location
+    parent_empty.location = current_loc + mathutils.Vector((move_x, move_y, move_z))
     parent_empty.keyframe_insert(data_path="location", frame=end_frame)
 
-    # Set interpolation to 'LINEAR' for a constant speed movement
+    # Reset back to original location after keyframing
+    parent_empty.location = current_loc
+
+    # Force keyframes to be linear
     if parent_empty.animation_data and parent_empty.animation_data.action:
         for fcurve in parent_empty.animation_data.action.fcurves:
-            if fcurve.data_path.startswith('location'): # Apply to X, Y, Z location F-curves
+            if fcurve.data_path.startswith("location"):
                 for kf in fcurve.keyframe_points:
                     kf.interpolation = 'LINEAR'
 
     print_debug_info("Background animation setup complete.")
+
+
 
 
 class BackgroundGridGeneratorOperator(bpy.types.Operator):
@@ -486,7 +483,7 @@ class BackgroundGridGeneratorOperator(bpy.types.Operator):
 
         # Original imported objects (background model) are now persistent in a hidden collection.
         # No explicit deletion is needed here.
-
+        
         # Animate background if enabled
         if ANIMATE_BACKGROUND and self._grid_parent:
             print_debug_info("Finishing operation: Adding background animation.")
@@ -498,6 +495,7 @@ class BackgroundGridGeneratorOperator(bpy.types.Operator):
                 BACKGROUND_MOVE_DISTANCE_Y,
                 BACKGROUND_MOVE_DISTANCE_Z
             )
+
         else:
             print_debug_info("Finishing operation: Skipping background animation (disabled or no grid parent).")
 

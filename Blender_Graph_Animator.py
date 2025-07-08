@@ -24,13 +24,13 @@ CURRENCY_SYMBOL = "$"
 GRAPH_ANIM_START_FRAME = 2
 GRAPH_ANIM_LENGTH_DATA = 100  # Adjusted: Made twice as slow (100 * 2 = 200)
 GRAPH_START_POSITION = 0
-GRAPH_X_AXIS_SPREAD = 10  # Increased distance between points for wider bases
+GRAPH_X_AXIS_SPREAD = 2  # Increased distance between points for wider bases
 
 
 # Custom Animated Object Settings for Graph
 ANIMATED_OBJECT_TYPE = "CYLINDER"  # Choose 'CUBE', 'CONE', or 'CYLINDER'
 ANIMATED_OBJECT_NAME = "Animated_Graph_Object"
-ANIMATED_OBJECT_SCALE = 0.5  # Initial scale for the custom object
+ANIMATED_OBJECT_SCALE = 0.1  # Initial scale for the custom object
 
 
 # NEW CONFIGURATION: Control whether to rebuild the graph if it already exists
